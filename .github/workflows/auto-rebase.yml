@@ -1,0 +1,74 @@
+name: auto-rebase
+
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Every Monday at 8am UTC
+  workflow_dispatch:
+
+jobs:
+  auto-rebase:
+    runs-on: ubuntu-latest
+    environment:
+      name: autorebase
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        fetch-tags: true
+        token: ${{ secrets.PAT_TOKEN }}
+    - run: git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+    - run: git config --global user.name "github-actions[bot]"
+
+    - name: Fetch upstream
+      run: |
+        git remote add upstream https://github.com/cloudflare/cloudflared.git
+        git fetch upstream --tags --force
+
+    - name: Find latest upstream release
+      id: latest
+      run: |
+        TAG=$(gh release view --repo cloudflare/cloudflared --json tagName -q .tagName)
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "Latest upstream release: $TAG"
+      env:
+        GH_TOKEN: ${{ github.token }}
+
+    - name: Check if already rebased onto this release
+      id: check
+      run: |
+        TAG="${{ steps.latest.outputs.tag }}"
+        if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+          echo "Already have tag $TAG"
+          echo "needed=false" >> $GITHUB_OUTPUT
+        else
+          echo "New release $TAG found"
+          echo "needed=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Rebase onto new release
+      if: steps.check.outputs.needed == 'true'
+      run: git rebase "${{ steps.latest.outputs.tag }}"
+
+    - name: Setup Go
+      if: steps.check.outputs.needed == 'true'
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Validate build
+      if: steps.check.outputs.needed == 'true'
+      run: go build ./cmd/cloudflared
+
+    - name: Push and tag
+      if: steps.check.outputs.needed == 'true'
+      run: |
+        TAG="${{ steps.latest.outputs.tag }}"
+        git push --force-with-lease
+        git tag -f "$TAG"
+        git push origin "$TAG"
+
+    - name: Create GitHub release
+      if: steps.check.outputs.needed == 'true'
+      run: gh release create "${{ steps.latest.outputs.tag }}" --repo "${{ github.repository }}" --title "${{ steps.latest.outputs.tag }}" --latest --notes "Auto-rebased patch on upstream release ${{ steps.latest.outputs.tag }}."
+      env:
+        GH_TOKEN: ${{ secrets.PAT_TOKEN }}
