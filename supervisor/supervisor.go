@@ -13,7 +13,6 @@ import (
 
 	"github.com/cloudflare/cloudflared/connection"
 	"github.com/cloudflare/cloudflared/edgediscovery"
-	"github.com/cloudflare/cloudflared/orchestration"
 	v3 "github.com/cloudflare/cloudflared/quic/v3"
 	"github.com/cloudflare/cloudflared/retry"
 	"github.com/cloudflare/cloudflared/signal"
@@ -31,7 +30,7 @@ const (
 // reconnects them if they disconnect.
 type Supervisor struct {
 	config                  *TunnelConfig
-	orchestrator            *orchestration.Orchestrator
+	orchestrator            connection.Orchestrator
 	edgeIPs                 *edgediscovery.Edge
 	edgeTunnelServer        TunnelServer
 	tunnelErrors            chan tunnelError
@@ -55,7 +54,7 @@ type tunnelError struct {
 	err   error
 }
 
-func NewSupervisor(config *TunnelConfig, orchestrator *orchestration.Orchestrator, gracefulShutdownC <-chan struct{}) (*Supervisor, error) {
+func NewSupervisor(config *TunnelConfig, orchestrator connection.Orchestrator, gracefulShutdownC <-chan struct{}) (*Supervisor, error) {
 	isStaticEdge := len(config.EdgeAddrs) > 0
 
 	var err error
